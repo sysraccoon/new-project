@@ -1,10 +1,13 @@
+#[cfg(test)]
+mod tests;
+
+use anyhow::{anyhow, Context};
 use chrono::SubsecRound;
 use clap::Parser;
 use indexmap::IndexMap;
 use minijinja::{context, Environment, UndefinedBehavior};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::error::Error;
 use std::fs::{self, File};
 use std::io::{stdin, stdout, BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -34,22 +37,22 @@ struct TemplateParameterInfo {
     default: Option<String>,
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let template_dir = Path::new(&args.template_dir);
 
     if !template_dir.exists() {
-        return Err("Template directory not exist".into());
+        return Err(anyhow!("Template directory not exist"));
     }
 
     if !template_dir.is_dir() {
-        return Err("Template directory has invalid file type".into());
+        return Err(anyhow!("Template directory has invalid file type"));
     }
 
     let current_dir = std::env::current_dir()?;
     let entry_count = fs::read_dir(&current_dir)?.count();
     if entry_count != 0 {
-        return Err("Current directory should be empty".into());
+        return Err(anyhow!("Current directory should be empty"));
     }
 
     initialize_project(template_dir.to_path_buf(), current_dir)?;
@@ -57,10 +60,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn initialize_project(template_dir: PathBuf, project_dir: PathBuf) -> Result<(), Box<dyn Error>> {
+fn initialize_project(template_dir: PathBuf, project_dir: PathBuf) -> anyhow::Result<()> {
+    let context = template_context(&project_dir);
+    initialize_project_with_context(template_dir, project_dir, context)
+}
+
+fn initialize_project_with_context(
+    template_dir: PathBuf,
+    project_dir: PathBuf,
+    context: HashMap<String, String>,
+) -> anyhow::Result<()> {
     let mut env = Environment::new();
     env.set_undefined_behavior(UndefinedBehavior::Strict);
-    env.add_global("context", template_context(&project_dir));
+    env.set_keep_trailing_newline(true);
+    env.add_global("context", context);
 
     let template_config: TemplateConfig = load_template_config(&template_dir)?;
 
@@ -106,12 +119,11 @@ fn initialize_project(template_dir: PathBuf, project_dir: PathBuf) -> Result<(),
 
         let trim_input = user_input.trim();
         let parameter_value = match (trim_input, default_value.clone()) {
-            ("", None) => return Err(format!("property '{}' is missed", &name).into()),
+            ("", None) => return Err(anyhow!("property '{}' is missed", &name)),
             ("", Some(default)) => default,
             (value, _) => value.to_string(),
         };
 
-        println!("add to global variables: {} {}", name, parameter_value);
         env.add_global(name, parameter_value);
     }
 
@@ -124,7 +136,10 @@ fn initialize_project(template_dir: PathBuf, project_dir: PathBuf) -> Result<(),
     while let Some((src, dest)) = walk_targets.pop() {
         lazy_create_dirs.push(dest.clone());
 
-        for entry in fs::read_dir(src)? {
+        for entry in fs::read_dir(src.clone()).context(format!(
+            "try read source directory {}",
+            src.clone().display()
+        ))? {
             let entry = entry?;
             let dest_path = dest.join(entry.file_name());
             let file_type = entry.file_type()?;
@@ -203,21 +218,19 @@ fn template_context(project_dir: &Path) -> HashMap<String, String> {
     );
 
     if let Ok(git_config) = git2::Config::open_default() {
-        result.insert(
-            String::from("git_user_name"),
-            git_config.get_string("user.name").unwrap(),
-        );
+        if let Ok(git_user_name) = git_config.get_string("user.name") {
+            result.insert(String::from("git_user_name"), git_user_name);
+        }
 
-        result.insert(
-            String::from("git_user_email"),
-            git_config.get_string("user.email").unwrap(),
-        );
+        if let Ok(git_user_email) = git_config.get_string("user.email") {
+            result.insert(String::from("git_user_email"), git_user_email);
+        }
     }
 
     result
 }
 
-fn load_template_config(template_dir: &Path) -> Result<TemplateConfig, Box<dyn Error>> {
+fn load_template_config(template_dir: &Path) -> anyhow::Result<TemplateConfig> {
     let possible_config_pathes: Vec<PathBuf> = default_template_config_pathes()
         .iter()
         .map(|p| template_dir.join(p))

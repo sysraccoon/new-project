@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = { version = "1.0.97", features = ["backtrace"] }
 chrono = "0.4.40"
 clap = { version = "4.5.26", features = ["derive"] }
 git2 = { version = "0.20.0", features = [], default-features = false }
@@ -11,3 +12,8 @@ indexmap = { version = "2.7.1", features = ["serde"] }
 minijinja = { version = "2.7.0", features = ["loader"] }
 serde = { version = "1.0.217", features = ["derive"] }
 serde_yml = "0.0.12"
+
+[dev-dependencies]
+test_dir = "0.2.0"
+dir-diff = "0.3.3"
+diffdir = "0.4.4"

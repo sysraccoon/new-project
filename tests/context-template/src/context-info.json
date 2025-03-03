@@ -1,0 +1,9 @@
+{
+  "project_directory_name": "{{ context.project_directory_name }}",
+  "project_directory_path": "{{ context.project_directory_path }}",
+  "current_date": "{{ context.current_date }}",
+  "current_time": "{{ context.current_time }}",
+  "git_user_name": "{{ context.git_user_name }}",
+  "git_user_email": "{{ context.git_user_email }}"
+}
+
