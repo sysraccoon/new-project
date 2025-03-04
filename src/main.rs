@@ -1,16 +1,18 @@
 #[cfg(test)]
 mod tests;
 
-use anyhow::{anyhow, Context};
+use anyhow::anyhow;
 use chrono::SubsecRound;
 use clap::Parser;
+use ignore::{Walk, WalkBuilder};
 use indexmap::IndexMap;
 use minijinja::{context, Environment, UndefinedBehavior};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs::{self, File};
+use std::fs::{self, File, FileType};
 use std::io::{stdin, stdout, BufRead, Write};
 use std::path::{Path, PathBuf};
+use walkdir::WalkDir;
 
 #[derive(Parser, Debug)]
 #[clap(author = "sysraccoon", version, about)]
@@ -21,6 +23,8 @@ struct Args {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct TemplateConfig {
+    #[serde(default)]
+    options: TemplateOptions,
     #[serde(default)]
     templates: Vec<String>,
     #[serde(default)]
@@ -35,6 +39,12 @@ struct TemplateParameterInfo {
     description: Option<String>,
     #[serde(default)]
     default: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct TemplateOptions {
+    #[serde(default)]
+    use_gitignore: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -127,42 +137,51 @@ fn initialize_project_with_context(
         env.add_global(name, parameter_value);
     }
 
-    let mut walk_targets: Vec<(PathBuf, PathBuf)> = vec![(template_dir.clone(), project_dir)];
-
     let mut lazy_create_dirs = Vec::new();
     let mut lazy_copy_files = Vec::new();
     let mut lazy_jinja_templates = Vec::new();
 
-    while let Some((src, dest)) = walk_targets.pop() {
-        lazy_create_dirs.push(dest.clone());
+    let traversal_entries: Vec<TraversalEntry> = if template_config.options.use_gitignore {
+        WalkBuilder::new(&template_dir)
+            .hidden(false)
+            .build()
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .map(|e| TraversalEntry {
+                file_type: e.file_type().unwrap(),
+                path: e.path().to_path_buf(),
+            }).collect()
+    } else {
+        WalkDir::new(&template_dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .map(|e| TraversalEntry {
+                file_type: e.file_type(),
+                path: e.path().to_path_buf(),
+            }).collect()
+    };
 
-        for entry in fs::read_dir(src.clone()).context(format!(
-            "try read source directory {}",
-            src.clone().display()
-        ))? {
-            let entry = entry?;
-            let dest_path = dest.join(entry.file_name());
-            let file_type = entry.file_type()?;
-            let relative_path = entry.path().strip_prefix(&template_dir)?.to_path_buf();
+    for entry in traversal_entries {
+        let relative_path = entry.path.strip_prefix(&template_dir)?.to_path_buf();
+        let dest_path = project_dir.join(&relative_path).to_path_buf();
+        let src_path = entry.path.clone();
 
-            if exclude_pathes.contains(&relative_path) {
-                continue;
-            }
+        if exclude_pathes.contains(&relative_path) {
+            continue;
+        }
 
-            if file_type.is_dir() {
-                let new_target = (entry.path(), dest_path);
-                walk_targets.push(new_target);
-                continue;
-            }
+        if entry.file_type.is_dir() {
+            lazy_create_dirs.push(dest_path);
+            continue;
+        }
 
-            if template_files.contains(&relative_path) {
-                let content = String::from_utf8(fs::read(entry.path())?).unwrap();
-                let template_name = relative_path.to_str().unwrap().to_string();
-                env.add_template_owned(template_name.clone(), content)?;
-                lazy_jinja_templates.push((template_name, dest_path));
-            } else {
-                lazy_copy_files.push((entry.path(), dest_path));
-            }
+        if template_files.contains(&relative_path) {
+            let content = String::from_utf8(fs::read(entry.path)?).unwrap();
+            let template_name = relative_path.to_str().unwrap().to_string();
+            env.add_template_owned(template_name.clone(), content)?;
+            lazy_jinja_templates.push((template_name, dest_path));
+        } else {
+            lazy_copy_files.push((src_path, dest_path));
         }
     }
 
@@ -185,6 +204,11 @@ fn initialize_project_with_context(
     }
 
     Ok(())
+}
+
+struct TraversalEntry {
+    file_type: FileType,
+    path: PathBuf,
 }
 
 fn template_context(project_dir: &Path) -> HashMap<String, String> {

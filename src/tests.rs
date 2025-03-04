@@ -2,25 +2,33 @@ use super::*;
 use diffdir::diffcmp::DirCmp;
 use test_dir::{DirBuilder, TestDir};
 
-#[test]
-fn test_basic() {
-    test_template("basic");
+macro_rules! test_templates {
+    ($($name:tt)*) => {
+    $(
+        #[test]
+        fn $name() {
+            test_template(stringify!($name));
+        }
+    )*
+    }
 }
 
-#[test]
-fn test_exclude() {
-    test_template("exclude");
-}
-
-#[test]
-fn test_context_template() {
-    test_template("context-template");
-}
+test_templates!(
+    basic
+    subdirectory
+    exclude
+    context_template
+    gitignore
+    not_gitignore
+);
 
 fn test_template(name: &str) {
     let basic_suite_path = Path::new("tests").join(name);
     let expected_dir = basic_suite_path.join("dest");
     let template_dir = basic_suite_path.join("src");
+
+    assert!(expected_dir.is_dir());
+    assert!(template_dir.is_dir());
 
     let test_dir_temp = TestDir::temp();
     let project_dir = test_dir_temp.path(".");
@@ -51,4 +59,3 @@ fn test_template(name: &str) {
         assert!(false, "difference: {}", diff_text);
     }
 }
-
