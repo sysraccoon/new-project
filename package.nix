@@ -1,6 +1,7 @@
 {
   rustPlatform,
   pkg-config,
+  lib,
 }:
 rustPlatform.buildRustPackage {
   name = "new-project";

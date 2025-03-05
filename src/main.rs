@@ -44,7 +44,7 @@ struct TemplateParameterInfo {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct TemplateOptions {
     #[serde(default)]
-    use_gitignore: bool,
+    use_ignore: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -141,7 +141,7 @@ fn initialize_project_with_context(
     let mut lazy_copy_files = Vec::new();
     let mut lazy_jinja_templates = Vec::new();
 
-    let traversal_entries: Vec<TraversalEntry> = if template_config.options.use_gitignore {
+    let traversal_entries: Vec<TraversalEntry> = if template_config.options.use_ignore {
         WalkBuilder::new(&template_dir)
             .hidden(false)
             .build()

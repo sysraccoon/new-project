@@ -18,8 +18,8 @@ test_templates!(
     subdirectory
     exclude
     context_template
-    gitignore
-    not_gitignore
+    ignore
+    not_ignore
 );
 
 fn test_template(name: &str) {
